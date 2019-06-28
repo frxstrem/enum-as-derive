@@ -1,11 +1,10 @@
 [package]
 name = "enum-as-derive"
 description = "EnumAs derive macro"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Fredrik Østrem <frx.apps@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/frxstrem/enum-as-derive"
-documentation = "https://docs.rs/enum-as-derive"
 edition = "2018"
 
 [lib]
