@@ -75,67 +75,75 @@ fn enum_as(input: DeriveInput) -> syn::Result<TokenStream> {
     for variant in variants {
         let field = match &variant.fields {
             Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
-                if unnamed.len() != 1 {
-                    return Err(syn::Error::new_spanned(
-                        variant,
-                        "Can only use EnumAs derive macro on enum items with only newtype variants",
-                    ));
+                if unnamed.len() == 1 {
+                    Some(&unnamed[0])
+                } else {
+                    None
                 }
-
-                &unnamed[0]
             }
-            _ => {
-                return Err(syn::Error::new_spanned(
-                    variant,
-                    "Can only use EnumAs derive macro on enum items with only newtype variants",
-                ))
-            }
+            _ => None,
         };
 
-        let variant_name = &variant.ident;
-        let variant_type = &field.ty;
-        let method_name = Ident::new(
-            &format!("as_{}", variant_name.to_string().to_snake_case()),
-            variant_name.span(),
-        );
-        let method_name_mut = Ident::new(
-            &format!("as_{}_mut", variant_name.to_string().to_snake_case()),
-            variant_name.span(),
-        );
-        let method_name_into = Ident::new(
-            &format!("into_{}", variant_name.to_string().to_snake_case()),
-            variant_name.span(),
-        );
+        let variant_ident = &variant.ident;
+        let variant_name = variant.ident.to_string().to_snake_case();
+
+        let method_name_is = Ident::new(&format!("is_{}", variant_name), Span::call_site());
+
+        let empty_capture_pattern = match &variant.fields {
+            Fields::Named(_) => quote!{ #ident::#variant_ident{..} },
+            Fields::Unnamed(_) => quote!{ #ident::#variant_ident(..) },
+            Fields::Unit => quote!{ #ident::#variant_ident },
+        };
 
         methods.push(quote! {
-            #vis fn #method_name(&self) -> Option<&#variant_type> {
-                if let #ident::#variant_name(value) = self {
-                    Some(value)
+            #vis fn #method_name_is(&self) -> bool {
+                if let #empty_capture_pattern = self {
+                    true
                 } else {
-                    None
-                }
-            }
-
-            #vis fn #method_name_mut(&mut self) -> Option<&mut #variant_type> {
-                if let #ident::#variant_name(value) = self {
-                    Some(value)
-                } else {
-                    None
-                }
-            }
-
-            #vis fn #method_name_into(self) -> Option<#variant_type> {
-                if let #ident::#variant_name(value) = self {
-                    Some(value)
-                } else {
-                    None
+                    false
                 }
             }
         });
+
+        if let Some(field) = field {
+            let variant_type = &field.ty;
+            let method_name_as = Ident::new(&format!("as_{}", variant_name), Span::call_site());
+            let method_name_mut =
+                Ident::new(&format!("as_{}_mut", variant_name), Span::call_site());
+            let method_name_into = Ident::new(&format!("into_{}", variant_name), Span::call_site());
+
+            methods.push(quote! {
+                #vis fn #method_name_as(&self) -> Option<&#variant_type> {
+                    if let #ident::#variant_ident(value) = self {
+                        Some(value)
+                    } else {
+                        None
+                    }
+                }
+
+                #vis fn #method_name_mut(&mut self) -> Option<&mut #variant_type> {
+                    if let #ident::#variant_ident(value) = self {
+                        Some(value)
+                    } else {
+                        None
+                    }
+                }
+
+                #vis fn #method_name_into(self) -> Option<#variant_type> {
+                    if let #ident::#variant_ident(value) = self {
+                        Some(value)
+                    } else {
+                        None
+                    }
+                }
+            });
+        }
     }
 
-    Ok(quote!{
-        impl #ident {
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    Ok(quote! {
+        impl #impl_generics #ident #ty_generics #where_clause {
             #( #methods )*
         }
     })
