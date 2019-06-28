@@ -51,10 +51,12 @@ pub fn enum_as_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 }
 
 fn enum_as(input: DeriveInput) -> syn::Result<TokenStream> {
-    let ident = &input.ident;
-    let vis = &input.vis;
+    // Destructure input
+    let DeriveInput { ident, vis, data, generics, .. } = &input;
 
-    let variants = match &input.data {
+    // Ensure that we're using the macro on an enum, and
+    // get all of the variants of the enum
+    let variants = match data {
         Data::Enum(DataEnum { variants, .. }) => variants,
         Data::Struct(DataStruct { struct_token, .. }) => {
             return Err(syn::Error::new_spanned(
@@ -70,9 +72,10 @@ fn enum_as(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
+    // For each variant, generate the methods for it
     let mut methods = Vec::new();
-
     for variant in variants {
+        // Get field (or None is variant is not a newtype variant, i.e. "Variant(T)")
         let field = match &variant.fields {
             Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
                 if unnamed.len() == 1 {
@@ -87,6 +90,7 @@ fn enum_as(input: DeriveInput) -> syn::Result<TokenStream> {
         let variant_ident = &variant.ident;
         let variant_name = variant.ident.to_string().to_snake_case();
 
+        // Generate "is_{variant}" method
         let method_name_is = Ident::new(&format!("is_{}", variant_name), Span::call_site());
 
         let empty_capture_pattern = match &variant.fields {
@@ -105,6 +109,7 @@ fn enum_as(input: DeriveInput) -> syn::Result<TokenStream> {
             }
         });
 
+        // If newtype variant, generate "as_{variant}", "as_{variant}_mut" etc. methods
         if let Some(field) = field {
             let variant_type = &field.ty;
             let method_name_as = Ident::new(&format!("as_{}", variant_name), Span::call_site());
@@ -140,8 +145,8 @@ fn enum_as(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     }
 
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-
+    // Wrap all the generated methods in an impl block
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     Ok(quote! {
         impl #impl_generics #ident #ty_generics #where_clause {
             #( #methods )*
